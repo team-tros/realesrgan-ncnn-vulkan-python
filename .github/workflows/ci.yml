@@ -1,0 +1,101 @@
+name: CI
+on:
+  push:
+    branches:
+      - master
+  pull_request: {}
+  workflow_dispatch: {}
+jobs:
+  windows:
+    strategy:
+      matrix:
+        python-version: [ '3.9','3.10', '3.11' ]
+
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: cache-vulkansdk
+        id: cache-vulkansdk
+        uses: actions/cache@v1
+        with:
+          path: "VulkanSDK"
+          key: VulkanSDK-1.3.236.0-Installer
+      - name: vulkansdk
+        if: steps.cache-vulkansdk.outputs.cache-hit != 'true'
+        run: |
+          Invoke-WebRequest -Uri https://sdk.lunarg.com/sdk/download/1.3.236.0/windows/VulkanSDK-1.3.236.0-Installer.exe?Human=true -OutFile VulkanSDK-1.3.236.0-Installer.exe
+          7z x -aoa ./VulkanSDK-1.3.236.0-Installer.exe -oVulkanSDK
+          ls
+      - uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: x64
+      - name: Check Python version
+        run: |
+          python --version
+      - name: Install dependencies
+        run: |
+          pip install build
+      - name: Build
+        run: |
+          $env:VULKAN_SDK="$(pwd)\VulkanSDK"
+          $env:CMAKE_FLAGS="-DPY_VERSION=${{ matrix.python-version }}"
+          python -m build -w .
+  ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan-dev glslang-dev glslang-tools
+          pip install build
+      - name: Build
+        run: |
+          python -m build -w .
+  ubuntu-1804:
+    strategy:
+      matrix:
+        python-version: [ '3.9','3.10', '3.11' ]
+
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: x64
+
+      - name: Check Python version
+        run: |
+          python --version
+      - name: cache-vulkansdk
+        id: cache-vulkansdk
+        uses: actions/cache@v1
+        with:
+          path: "1.3.236.0"
+          key: vulkansdk-linux-x86_64-1.3.236.0
+      - name: vulkansdk
+        if: steps.cache-vulkansdk.outputs.cache-hit != 'true'
+        run: |
+          wget https://sdk.lunarg.com/sdk/download/1.3.236.0/linux/vulkansdk-linux-x86_64-1.3.236.0.tar.gz?Human=true -O vulkansdk-linux-x86_64-1.3.236.0.tar.gz
+          tar -xf vulkansdk-linux-x86_64-1.3.236.0.tar.gz
+          rm -rf 1.3.236.0/source 1.3.236.0/samples
+          find 1.3.236.0 -type f | grep -v -E 'vulkan|glslang' | xargs rm
+      - name: Install dependencies
+        run: |
+          pip install build
+      - name: Build
+        run: |
+          export VULKAN_SDK=`pwd`/1.3.236.0/x86_64 
+          export CMAKE_FLAGS="-DPY_VERSION=${{ matrix.python-version }}"
+          python -m build -w .
